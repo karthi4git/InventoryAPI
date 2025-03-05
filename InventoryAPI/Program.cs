@@ -1,4 +1,6 @@
 using InventoryAPI;
+using InventoryAPI.Repositories;
+using InventoryAPI.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,6 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<InventoryContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+builder.Services.AddScoped<IInventoryRepository, InventoryRepository>();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
 // Add services to the container.
 
 builder.Services.AddControllers();
