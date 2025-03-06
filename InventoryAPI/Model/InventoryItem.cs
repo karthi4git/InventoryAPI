@@ -2,10 +2,10 @@
 {
     public class InventoryItem
     {
-        public int ItemId { get; set; }
-        public string Name { get; set; }
+        public int Id { get; set; }
+        public string ProductName { get; set; }
         public int Quantity { get; set; }
-        public decimal Price { get; set; }
+        public DateTime ShipmentDate { get; set; }
 
     }
 }

@@ -1,4 +1,5 @@
 ﻿using InventoryAPI.Model;
+using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Repositories
 {

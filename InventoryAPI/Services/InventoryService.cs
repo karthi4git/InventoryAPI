@@ -1,5 +1,6 @@
 ﻿using InventoryAPI.Model;
 using InventoryAPI.Repositories;
+using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Services
 {
@@ -20,7 +21,10 @@ namespace InventoryAPI.Services
 
             return await _repository.AddAsync(item);
         }
-
+        public async Task<ActionResult<InventoryItem>> GetItemByIdAsync(int id)
+        {
+            return await _repository.GetByIdAsync(id);
+        }
         public async Task<IEnumerable<InventoryItem>> GetAllItemsAsync()
         {
             return await _repository.GetAllAsync();
@@ -28,7 +32,7 @@ namespace InventoryAPI.Services
 
         public async Task<InventoryItem?> UpdateItemAsync(InventoryItem item)
         {
-            var existingItem = await _repository.GetByIdAsync(item.ItemId);
+            var existingItem = await _repository.GetByIdAsync(item.Id);
             if (existingItem == null)
                 return null;
 

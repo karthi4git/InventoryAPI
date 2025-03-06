@@ -1,4 +1,5 @@
 ﻿using InventoryAPI.Model;
+using InventoryAPI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -9,12 +10,12 @@ namespace InventoryAPI.Controllers
     [Route("api/[controller]")]
     public class InventoryController : ControllerBase
     {
-        private readonly InventoryContext _context;
+        private readonly IInventoryService _inventoryService;
         private readonly ILogger<InventoryController> _logger;
 
-        public InventoryController(InventoryContext context, ILogger<InventoryController> logger)
+        public InventoryController(IInventoryService inventoryService, ILogger<InventoryController> logger)
         {
-            _context = context;
+            _inventoryService = inventoryService;
             _logger = logger;
         }
 
@@ -24,8 +25,7 @@ namespace InventoryAPI.Controllers
             try
             {
                 _logger.LogInformation("Fetching all inventory items.");
-                var items = await _context.InventoryItems.AsNoTracking().ToListAsync();
-                return Ok(items);
+                return Ok(await _inventoryService.GetAllItemsAsync());
             }
             catch (Exception ex)
             {
@@ -33,16 +33,20 @@ namespace InventoryAPI.Controllers
                 return StatusCode(500, "Internal server error");
             }
         }
-
+        [HttpGet("{id}")]
+        public async Task<ActionResult<InventoryItem>> GetItem(int id)
+        {
+            var item = await _inventoryService.GetItemByIdAsync(id);
+            return item != null ? Ok(item) : NotFound();
+        }
         [HttpPost]
         public async Task<IActionResult> AddItem(InventoryItem item)
         {
             try
             {
-                _logger.LogInformation($"Adding new item: {item.Name}");
-                _context.InventoryItems.Add(item);
-                await _context.SaveChangesAsync();
-                return Ok(item);
+                _logger.LogInformation($"Adding new item: {item.ProductName}");
+                await _inventoryService.CreateItemAsync(item);
+                return CreatedAtAction(nameof(GetItem), new { id = item.Id }, item);
             }
             catch (Exception ex)
             {
@@ -57,16 +61,9 @@ namespace InventoryAPI.Controllers
             try
             {
                 _logger.LogInformation($"Updating item with ID: {id}");
-                var existingItem = await _context.InventoryItems.FindAsync(id);
-                if (existingItem == null)
-                    return NotFound();
-
-                existingItem.Name = updatedItem.Name;
-                existingItem.Quantity = updatedItem.Quantity;
-                existingItem.Price = updatedItem.Price;
-
-                await _context.SaveChangesAsync();
-                return Ok(existingItem);
+                if (id != updatedItem.Id) return BadRequest("ID mismatch");
+                await _inventoryService.UpdateItemAsync(updatedItem);
+                return NoContent();
             }
             catch (Exception ex)
             {
@@ -81,13 +78,8 @@ namespace InventoryAPI.Controllers
             try
             {
                 _logger.LogInformation($"Deleting item with ID: {id}");
-                var item = await _context.InventoryItems.FindAsync(id);
-                if (item == null)
-                    return NotFound();
-
-                _context.InventoryItems.Remove(item);
-                await _context.SaveChangesAsync();
-                return Ok();
+                await _inventoryService.DeleteItemAsync(id);
+                return NoContent();               
             }
             catch (Exception ex)
             {

@@ -1,100 +1,247 @@
-using Moq;
-using NUnit.Framework;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using InventoryAPI.Controllers;
 using InventoryAPI.Model;
+using InventoryAPI.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using Moq;
+using Xunit;
+using Assert = Xunit.Assert;
 
-namespace InventoryAPI.Tests
+public class InventoryControllerTests
 {
-    [TestFixture]
-    public class InventoryControllerTests
+    private readonly Mock<IInventoryService> _inventoryServiceMock;
+    private readonly Mock<ILogger<InventoryController>> _loggerMock;
+    private readonly InventoryController _controller;
+
+    public InventoryControllerTests()
     {
-        private InventoryContext _dbContext;
-        private InventoryController _controller;
-        private Mock<ILogger<InventoryController>> _mockLogger;
+        _inventoryServiceMock = new Mock<IInventoryService>();
+        _loggerMock = new Mock<ILogger<InventoryController>>();
+        _controller = new InventoryController(_inventoryServiceMock.Object, _loggerMock.Object);
+    }
 
-        [SetUp]
-        public void Setup()
-        {
-            var options = new DbContextOptionsBuilder<InventoryContext>()
-                .UseInMemoryDatabase(databaseName: "TestDatabase")
-                .Options;
-            _dbContext = new InventoryContext(options);
+    [Fact]
+    public async Task GetInventory_ReturnsOkWithItems()
+    {
+        // Arrange
+        var expectedItems = new List<InventoryItem> { new InventoryItem { Id = 1, ProductName = "Test Item" } };
+        _inventoryServiceMock.Setup(s => s.GetAllItemsAsync()).ReturnsAsync(expectedItems);
 
-            _mockLogger = new Mock<ILogger<InventoryController>>();
-            _controller = new InventoryController(_dbContext, _mockLogger.Object);
+        // Act
+        var result = await _controller.GetInventory();
 
-            _dbContext.InventoryItems.AddRange(new List<InventoryItem>
-            {
-                new InventoryItem { ItemId = 1, Name = "Item1", Quantity = 10, Price = 100 },
-                new InventoryItem { ItemId = 2, Name = "Item2", Quantity = 20, Price = 200 }
-            });
-            _dbContext.SaveChanges();
-        }
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(expectedItems, okResult.Value);
 
-        [Test]
-        public async Task GetInventory_ReturnsOkResult_WithItems()
-        {
-            var result = await _controller.GetInventory();
-            var okResult = result as OkObjectResult;
+        // Verify logging
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Fetching all inventory items.")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.Once);
+    }
 
-            Assert.IsNotNull(okResult);
-            Assert.AreEqual(200, okResult.StatusCode);
-            var items = okResult.Value as List<InventoryItem>;
-            Assert.AreEqual(2, items.Count);
-        }
+    [Fact]
+    public async Task GetInventory_ThrowsException_ReturnsInternalServerError()
+    {
+        // Arrange
+        _inventoryServiceMock.Setup(s => s.GetAllItemsAsync()).ThrowsAsync(new Exception());
 
-        [Test]
-        public async Task AddItem_ReturnsOkResult_WithNewItem()
-        {
-            var newItem = new InventoryItem { ItemId = 3, Name = "Item3", Quantity = 30, Price = 300 };
+        // Act
+        var result = await _controller.GetInventory();
 
-            var result = await _controller.AddItem(newItem);
-            var okResult = result as OkObjectResult;
+        // Assert
+        var statusCodeResult = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(500, statusCodeResult.StatusCode);
 
-            Assert.IsNotNull(okResult);
-            Assert.AreEqual(200, okResult.StatusCode);
-            Assert.AreEqual(newItem, okResult.Value);
-        }
+        // Verify error logging
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Error occurred while retrieving inventory items.")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.Once);
+    }
 
-        [Test]
-        public async Task UpdateItem_ReturnsOkResult_WithUpdatedItem()
-        {
-            var updatedItem = new InventoryItem { Name = "UpdatedItem1", Quantity = 50, Price = 500 };
+    [Fact]
+    public async Task GetItem_ExistingId_ReturnsItem()
+    {
+        // Arrange
+        var testItem = new InventoryItem { Id = 1, ProductName = "Test Item" };
+        _inventoryServiceMock.Setup(s => s.GetItemByIdAsync(1)).ReturnsAsync(testItem);
 
-            var result = await _controller.UpdateItem(1, updatedItem);
-            var okResult = result as OkObjectResult;
+        // Act
+        var result = await _controller.GetItem(1);
 
-            Assert.IsNotNull(okResult);
-            Assert.AreEqual(200, okResult.StatusCode);
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(testItem, okResult.Value);
+    }
 
-            var item = _dbContext.InventoryItems.FirstOrDefault(i => i.ItemId == 1);
-            Assert.AreEqual("UpdatedItem1", item.Name);
-            Assert.AreEqual(50, item.Quantity);
-            Assert.AreEqual(500, item.Price);
-        }
+    [Fact]
+    public async Task GetItem_NonExistingId_ReturnsNotFound()
+    {
+        // Arrange
+        _inventoryServiceMock.Setup(s => s.GetItemByIdAsync(It.IsAny<int>())).ReturnsAsync((InventoryItem)null);
 
-        [Test]
-        public async Task DeleteItem_ReturnsOkResult_WhenItemExists()
-        {
-            var result = await _controller.DeleteItem(1);
-            var okResult = result as OkResult;
+        // Act
+        var result = await _controller.GetItem(99);
 
-            Assert.IsNotNull(okResult);
-            Assert.AreEqual(200, okResult.StatusCode);
-            Assert.IsNull(_dbContext.InventoryItems.FirstOrDefault(i => i.ItemId == 1));
-        }
+        // Assert
+        Assert.IsType<NotFoundResult>(result);
+    }
 
-        [TearDown]
-        public void Cleanup()
-        {
-            _dbContext.Database.EnsureDeleted();
-            _dbContext.Dispose();
-        }
+    [Fact]
+    public async Task AddItem_ValidItem_ReturnsCreatedAtAction()
+    {
+        // Arrange
+        var testItem = new InventoryItem { Id = 1, ProductName = "New Item" };
+        _inventoryServiceMock.Setup(s => s.CreateItemAsync(testItem)).Returns(Task.CompletedTask.ToString);
+
+        // Act
+        var result = await _controller.AddItem(testItem);
+
+        // Assert
+        var createdAtResult = Assert.IsType<CreatedAtActionResult>(result);
+        Assert.Equal(nameof(InventoryController.GetItem), createdAtResult.ActionName);
+        Assert.Equal(testItem.Id, createdAtResult.RouteValues["id"]);
+        Assert.Equal(testItem, createdAtResult.Value);
+
+        // Verify logging
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains($"Adding new item: {testItem.ProductName}")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task AddItem_ThrowsException_ReturnsInternalServerError()
+    {
+        // Arrange
+        _inventoryServiceMock.Setup(s => s.CreateItemAsync(It.IsAny<InventoryItem>())).ThrowsAsync(new Exception());
+
+        // Act
+        var result = await _controller.AddItem(new InventoryItem());
+
+        // Assert
+        var statusCodeResult = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(500, statusCodeResult.StatusCode);
+
+        // Verify error logging
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Error occurred while adding an item.")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateItem_IdMismatch_ReturnsBadRequest()
+    {
+        // Arrange
+        var testItem = new InventoryItem { Id = 2 };
+
+        // Act
+        var result = await _controller.UpdateItem(1, testItem);
+
+        // Assert
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("ID mismatch", badRequestResult.Value);
+    }
+
+    [Fact]
+    public async Task UpdateItem_ValidUpdate_ReturnsNoContent()
+    {
+        // Arrange
+        var testItem = new InventoryItem { Id = 1 };
+        _inventoryServiceMock.Setup(s => s.UpdateItemAsync(testItem)).Returns(Task.CompletedTask.ToString);
+
+        // Act
+        var result = await _controller.UpdateItem(1, testItem);
+
+        // Assert
+        Assert.IsType<NoContentResult>(result);
+        _inventoryServiceMock.Verify(s => s.UpdateItemAsync(testItem), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateItem_ThrowsException_ReturnsInternalServerError()
+    {
+        // Arrange
+        var testItem = new InventoryItem { Id = 1 };
+        _inventoryServiceMock.Setup(s => s.UpdateItemAsync(testItem)).ThrowsAsync(new Exception());
+
+        // Act
+        var result = await _controller.UpdateItem(1, testItem);
+
+        // Assert
+        var statusCodeResult = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(500, statusCodeResult.StatusCode);
+
+        // Verify error logging
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains($"Error occurred while updating item with ID: {testItem.Id}")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteItem_ExistingId_ReturnsNoContent()
+    {
+        // Arrange
+        const int testId = 1;
+        _inventoryServiceMock.Setup(s => s.DeleteItemAsync(testId)).Returns(Task.CompletedTask.ToString);
+
+        // Act
+        var result = await _controller.DeleteItem(testId);
+
+        // Assert
+        Assert.IsType<NoContentResult>(result);
+        _inventoryServiceMock.Verify(s => s.DeleteItemAsync(testId), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteItem_ThrowsException_ReturnsInternalServerError()
+    {
+        // Arrange
+        const int testId = 1;
+        _inventoryServiceMock.Setup(s => s.DeleteItemAsync(testId)).ThrowsAsync(new Exception());
+
+        // Act
+        var result = await _controller.DeleteItem(testId);
+
+        // Assert
+        var statusCodeResult = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(500, statusCodeResult.StatusCode);
+
+        // Verify error logging
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains($"Error occurred while deleting item with ID: {testId}")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
+            Times.Once);
     }
 }

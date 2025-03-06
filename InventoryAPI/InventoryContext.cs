@@ -13,7 +13,7 @@ namespace InventoryAPI
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<InventoryItem>().HasKey(i => i.ItemId);
+            modelBuilder.Entity<InventoryItem>().HasKey(i => i.Id);
         }
 
     }

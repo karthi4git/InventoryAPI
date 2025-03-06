@@ -33,14 +33,14 @@ namespace InventoryAPI.Repositories
 
         public async Task<InventoryItem> UpdateAsync(InventoryItem item)
         {
-            var existingItem = await _context.InventoryItems.FindAsync(item.ItemId);
+            var existingItem = await _context.InventoryItems.FindAsync(item.Id);
             if (existingItem == null)
                 return null;
 
-            existingItem.Name = item.Name;
+            existingItem.ProductName = item.ProductName;
             //existingItem.Description = item.des;
             existingItem.Quantity = item.Quantity;
-            existingItem.Price = item.Price;
+            existingItem.ShipmentDate = item.ShipmentDate;
             //existingItem.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
